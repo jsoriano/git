@@ -1933,6 +1933,7 @@ int read_index_unmerged(struct index_state *istate)
 {
 	int i;
 	int unmerged = 0;
+	struct cache_entry *merged_ce = NULL;
 
 	read_index(istate);
 	for (i = 0; i < istate->cache_nr; i++) {
@@ -1940,9 +1941,28 @@ int read_index_unmerged(struct index_state *istate)
 		struct cache_entry *new_ce;
 		int size, len;
 
-		if (!ce_stage(ce))
+		if (!ce_stage(ce)) {
+			merged_ce = ce;
 			continue;
+		}
 		unmerged = 1;
+		if (merged_ce && ce_same_name(merged_ce, ce)) {
+			warning("Unexpected stages for merged file '%s':",
+				merged_ce->name);
+			i--;
+			do {
+				ce = istate->cache[i];
+				warning("%06o %s %d",
+					ce->ce_mode,
+					sha1_to_hex(ce->sha1),
+					ce_stage(ce)),
+				i++;
+			} while (i < istate->cache_nr &&
+				 ce_same_name(merged_ce, ce));
+			merged_ce->ce_flags = create_ce_flags(0) | CE_CONFLICTED;
+			merged_ce = NULL;
+			continue;
+		}
 		len = ce_namelen(ce);
 		size = cache_entry_size(len);
 		new_ce = xcalloc(1, size);
@@ -1953,7 +1973,6 @@ int read_index_unmerged(struct index_state *istate)
 		if (add_index_entry(istate, new_ce, 0))
 			return error("%s: cannot drop to stage #0",
 				     new_ce->name);
-		i = index_name_pos(istate, new_ce->name, len);
 	}
 	return unmerged;
 }
