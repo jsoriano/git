@@ -935,6 +935,7 @@ static int add_index_entry_with_check(struct index_state *istate, struct cache_e
 	int ok_to_replace = option & ADD_CACHE_OK_TO_REPLACE;
 	int skip_df_check = option & ADD_CACHE_SKIP_DFCHECK;
 	int new_only = option & ADD_CACHE_NEW_ONLY;
+	int replaced = 0;
 
 	cache_tree_invalidate_path(istate->cache_tree, ce->name);
 	pos = index_name_stage_pos(istate, ce->name, ce_namelen(ce), ce_stage(ce));
@@ -943,9 +944,10 @@ static int add_index_entry_with_check(struct index_state *istate, struct cache_e
 	if (pos >= 0) {
 		if (!new_only)
 			replace_index_entry(istate, pos, ce);
-		return 0;
-	}
-	pos = -pos-1;
+		replaced = 1;
+		pos++;
+	} else
+		pos = -pos-1;
 
 	/*
 	 * Inserting a merged entry ("stage 0") into the index
@@ -953,12 +955,18 @@ static int add_index_entry_with_check(struct index_state *istate, struct cache_e
 	 */
 	if (pos < istate->cache_nr && ce_stage(ce) == 0) {
 		while (ce_same_name(istate->cache[pos], ce)) {
+			if (replaced)
+				die("Merged and unmerged entries found for "
+				    "'%s', check 'git ls-files -s \"%s\"'",
+				    ce->name, ce->name);
 			ok_to_add = 1;
 			if (!remove_index_entry_at(istate, pos))
 				break;
 		}
 	}
 
+	if (replaced)
+		return 0;
 	if (!ok_to_add)
 		return -1;
 	if (!verify_path(ce->name))
